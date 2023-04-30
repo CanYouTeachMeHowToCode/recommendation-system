@@ -267,7 +267,6 @@ class QNetwork:
             # self.output2= tf.contrib.layers.fully_connected(self.states_hidden, self.item_num,
             #                                                  activation_fn=None, scope="ce-logits")  # all ce logits
             self.output1 = tf.compat.v1.layers.dense(self.states_hidden, self.item_num, activation=None)
-            self.output2 = tf.compat.v1.layers.dense(self.states_hidden, self.item_num, activation=None)
 
             # TRFL way
             self.actions = tf.compat.v1.placeholder(tf.int32, [None])
@@ -285,51 +284,60 @@ class QNetwork:
                                                                                   item_num])  # used for select best action for double q learning
 
             # TRFL double qlearning
-            qloss_positive, _ = trfl.double_qlearning(self.output1, self.actions, self.reward, self.discount,
-                                                      self.targetQs_, self.targetQs_selector)
-            neg_reward = tf.constant(reward_negative, dtype=tf.float32, shape=(args.batch_size,))
-            qloss_negative = 0
-            for i in range(self.neg):
-                negative = tf.gather(self.negative_actions, i, axis=1)
-
-                qloss_negative += trfl.double_qlearning(self.output1, negative, neg_reward,
-                                                        self.discount, self.targetQ_current_,
-                                                        self.targetQ_current_selector)[0]
+            # qloss_positive, _ = trfl.double_qlearning(self.output1, self.actions, self.reward, self.discount,
+            #                                           self.targetQs_, self.targetQs_selector)
+            # neg_reward = tf.constant(reward_negative, dtype=tf.float32, shape=(args.batch_size,))
+            # qloss_negative = 0
+            # for i in range(self.neg):
+            #     negative = tf.gather(self.negative_actions, i, axis=1)
+            #
+            #     qloss_negative += trfl.double_qlearning(self.output1, negative, neg_reward,
+            #                                             self.discount, self.targetQ_current_,
+            #                                             self.targetQ_current_selector)[0]
 
             # item features
             # CHANGES: Add a placeholder for the category IDs
             self.item_features = tf.compat.v1.placeholder(tf.float32, [None, item_num,1])
 
+            self.output2 = tf.compat.v1.layers.dense(self.states_hidden, self.item_num, activation=None,name="ce-logits")
 
 
 
             # CHANGES: Add another fully connected layer to encode the categorical features
             self.feature_embedding = tf.compat.v1.layers.dense(self.item_features, self.hidden_size +1, activation=None)
-            print("feature embedding shape")
-            print(self.feature_embedding.shape)
+            # Update dimensions of self.item_features
+            self.item_features_expanded = tf.expand_dims(self.item_features, axis=1)
+
+            # Calculate the final scores by performing a dot product between self.output2 and self.feature_embedding
+            self.final_score = tf.matmul(self.output2, self.item_features_expanded)
+            self.final_score_squeezed = tf.squeeze(self.final_score, axis=[1, 3])
+
+            # print("feature embedding shape")
+            # print(self.feature_embedding.shape)
+            # # dot_product = tf.matmul(self.states_hidden, tf.transpose(self.feature_embedding[:, :, :-1], perm=[0, 2, 1]))
             # dot_product = tf.matmul(self.states_hidden, tf.transpose(self.feature_embedding[:, :, :-1], perm=[0, 2, 1]))
-            dot_product = tf.matmul(self.states_hidden, tf.transpose(self.feature_embedding[:, :, :-1], perm=[0, 2, 1]))
-            print("dot product shape")
-            print(dot_product.shape)
-
-
-            # Add the bias term from feature_embedding[:, -1]
-            self.phi_prime = tf.reshape(dot_product, [-1, 1]) + self.feature_embedding[:, :, -1]
-            # self.phi_prime = tf.reshape(dot_product, [-1, 1])
-            print("phi_prime shape")
-            print(self.phi_prime.shape)
-            # CHANGES: Calculate phi'
-            print("output2 shape")
-            print(self.output2)
-            lambda_value = 0.8
-            self.final_score = lambda_value * self.output2 + (1 - lambda_value) * self.phi_prime
+            # print("dot product shape")
+            # print(dot_product.shape)
+            #
+            #
+            # # Add the bias term from feature_embedding[:, -1]
+            # self.phi_prime = tf.reshape(dot_product, [-1, 1]) + self.feature_embedding[:, :, -1]
+            # # self.phi_prime = tf.reshape(dot_product, [-1, 1])
+            # print("phi_prime shape")
+            # print(self.phi_prime.shape)
+            # # CHANGES: Calculate phi'
+            # print("output2 shape")
+            # print(self.output2)
+            # lambda_value = 1
+            # self.final_score = lambda_value * self.output2 + (1 - lambda_value) * self.phi_prime
 
             # CHANGES: Provide the final score in the cross-entropy loss
             ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.actions, logits=self.final_score)
 
             # ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.actions, logits=self.output2)
 
-            self.loss = tf.reduce_mean(self.weight * (qloss_positive + qloss_negative) + ce_loss)
+            # self.loss = tf.reduce_mean(self.weight * (qloss_positive + qloss_negative) + ce_loss)
+            self.loss = tf.reduce_mean(0 + ce_loss)
             self.opt = tf.compat.v1.train.AdamOptimizer(learning_rate).minimize(self.loss)
 
     def initialize_embeddings(self):
